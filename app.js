@@ -1,9 +1,167 @@
-import {money,invoiceStatus,totals,reminderText} from './core.mjs';
-const key='invoicechaser.invoices.v1';
-const sample=[{id:crypto.randomUUID(),client:'Northstar Studio',number:'INV-104',amount:1400,due:'2026-11-08',email:'',status:'open'},{id:crypto.randomUUID(),client:'Morrow & Co.',number:'INV-108',amount:2880,due:'2026-11-27',email:'',status:'open'}];
-let invoices=JSON.parse(localStorage.getItem(key)||'null')||sample;
-const $=s=>document.querySelector(s), form=$('#invoice-form');
-function save(){localStorage.setItem(key,JSON.stringify(invoices));render()}
-function toast(message){const el=$('#toast');el.textContent=message;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2000)}
-function render(){const t=totals(invoices),body=$('#invoices');$('#stats').innerHTML=`<div class="stat"><label>Outstanding</label><strong>${money(t.outstanding)}</strong></div><div class="stat"><label>Past due</label><strong>${money(t.overdue)}</strong></div><div class="stat"><label>Open invoices</label><strong>${invoices.filter(x=>invoiceStatus(x)!=='paid').length}</strong></div>`;body.innerHTML='';for(const inv of invoices){const status=invoiceStatus(inv),tr=document.createElement('tr');tr.innerHTML=`<td><div class="client-name"></div><div class="invoice-number"></div></td><td>${inv.due}</td><td><b>${money(inv.amount)}</b></td><td><span class="pill ${status}">${status==='due'?'Due soon':status[0].toUpperCase()+status.slice(1)}</span></td><td><div class="row-actions"></div></td>`;tr.querySelector('.client-name').textContent=inv.client;tr.querySelector('.invoice-number').textContent=inv.number||'Invoice';const actions=tr.querySelector('.row-actions');if(status!=='paid'){const draft=document.createElement('button');draft.textContent='Draft reminder';draft.onclick=async()=>{try{await navigator.clipboard.writeText(reminderText(inv));toast('Reminder copied. Review and send it yourself.')}catch{prompt('Copy this reminder draft:',reminderText(inv))}};actions.append(draft);const paid=document.createElement('button');paid.textContent='Mark paid';paid.onclick=()=>{inv.status='paid';save();toast('Marked as paid')};actions.append(paid)}else{const reopen=document.createElement('button');reopen.textContent='Reopen';reopen.onclick=()=>{inv.status='open';save()};actions.append(reopen)}body.append(tr)}$('#empty').classList.toggle('hidden',invoices.length>0);$('.table-wrap').classList.toggle('hidden',invoices.length===0)}
-$('#add-toggle').onclick=()=>{form.classList.remove('hidden');form.querySelector('[name=client]').focus()};$('#cancel').onclick=()=>form.classList.add('hidden');form.onsubmit=e=>{e.preventDefault();const d=Object.fromEntries(new FormData(form));invoices.unshift({id:crypto.randomUUID(),...d,amount:Number(d.amount),status:'open'});form.reset();form.classList.add('hidden');save();toast('Invoice saved on this device')};$('#export').onclick=()=>{const rows=[['Client','Invoice','Amount','Due date','Status'],...invoices.map(i=>[i.client,i.number,i.amount,i.due,invoiceStatus(i)])];const csv=rows.map(r=>r.map(v=>`"${String(v).replaceAll('"','""')}"`).join(',')).join('\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download='invoices.csv';a.click();URL.revokeObjectURL(a.href)};render();
+import { dueLabel, invoiceStatus, localISODate, money, reminderText, shiftISODate, totals } from './core.mjs';
+
+const storageKey = 'invoicechaser.invoices.v1';
+const sampleInvoices = () => [
+  { id: crypto.randomUUID(), client: 'Northstar Studio', number: 'INV-104', amount: 1400, due: shiftISODate(localISODate(), -8), email: '', status: 'open' },
+  { id: crypto.randomUUID(), client: 'Morrow & Co.', number: 'INV-108', amount: 2880, due: shiftISODate(localISODate(), 11), email: '', status: 'open' },
+];
+
+function readInvoices() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
+    return Array.isArray(saved) ? saved : sampleInvoices();
+  } catch {
+    return sampleInvoices();
+  }
+}
+
+let invoices = readInvoices();
+let filter = 'all';
+const $ = selector => document.querySelector(selector);
+const form = $('#invoice-form');
+
+function toast(message) {
+  const element = $('#toast');
+  element.textContent = message;
+  element.classList.add('show');
+  setTimeout(() => element.classList.remove('show'), 2200);
+}
+
+function persist() {
+  localStorage.setItem(storageKey, JSON.stringify(invoices));
+  render();
+}
+
+function render() {
+  const summary = totals(invoices);
+  const today = localISODate();
+  $('#stats').innerHTML = `
+    <div class="stat"><label>Outstanding</label><strong>${money(summary.outstanding)}</strong></div>
+    <div class="stat"><label>Past due</label><strong>${money(summary.overdue)}</strong></div>
+    <div class="stat"><label>Due today</label><strong>${money(summary.dueToday)}</strong></div>`;
+
+  const query = $('#invoice-search').value.trim().toLowerCase();
+  const visible = invoices.filter(invoice => {
+    const status = invoiceStatus(invoice, today);
+    const matchesFilter = filter === 'all' || status === filter;
+    const matchesQuery = `${invoice.client} ${invoice.number || ''}`.toLowerCase().includes(query);
+    return matchesFilter && matchesQuery;
+  });
+  const body = $('#invoices');
+  body.replaceChildren();
+
+  for (const invoice of visible) {
+    const status = invoiceStatus(invoice, today);
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><div class="client-name"></div><div class="invoice-number"></div></td>
+      <td><time></time><small class="due-note"></small></td>
+      <td><b class="amount"></b></td>
+      <td><span class="pill"></span></td>
+      <td><div class="row-actions"></div></td>`;
+    row.querySelector('.client-name').textContent = invoice.client;
+    row.querySelector('.invoice-number').textContent = invoice.number || 'Invoice';
+    row.querySelector('time').dateTime = invoice.due;
+    row.querySelector('time').textContent = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${invoice.due}T12:00:00`));
+    row.querySelector('.due-note').textContent = dueLabel(invoice.due, today);
+    row.querySelector('.amount').textContent = money(invoice.amount);
+    const badge = row.querySelector('.pill');
+    badge.className = `pill ${status}`;
+    badge.textContent = ({ today: 'Due today', upcoming: 'Upcoming', overdue: 'Past due', paid: 'Paid' })[status];
+
+    const actions = row.querySelector('.row-actions');
+    if (status !== 'paid') {
+      const draft = document.createElement('button');
+      draft.type = 'button';
+      draft.textContent = invoice.email ? 'Draft email' : 'Copy reminder';
+      draft.setAttribute('aria-label', `${invoice.email ? 'Open email draft for' : 'Copy reminder for'} ${invoice.client}`);
+      draft.onclick = async () => {
+        const message = reminderText(invoice);
+        if (invoice.email) {
+          const subject = `Payment reminder: ${invoice.number || 'invoice'}`;
+          window.location.href = `mailto:${encodeURIComponent(invoice.email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message)}`;
+          toast('Email draft opened. Review it before sending.');
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(message);
+          toast('Reminder copied. Review and send it yourself.');
+        } catch {
+          prompt('Copy this reminder draft:', message);
+        }
+      };
+      actions.append(draft);
+      const paid = document.createElement('button');
+      paid.type = 'button';
+      paid.textContent = 'Mark paid';
+      paid.onclick = () => {
+        invoice.status = 'paid';
+        persist();
+        toast('Invoice marked paid');
+      };
+      actions.append(paid);
+    } else {
+      const reopen = document.createElement('button');
+      reopen.type = 'button';
+      reopen.textContent = 'Reopen';
+      reopen.onclick = () => { invoice.status = 'open'; persist(); };
+      actions.append(reopen);
+    }
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = 'Delete';
+    remove.setAttribute('aria-label', `Delete invoice for ${invoice.client}`);
+    remove.onclick = () => {
+      if (!confirm(`Delete invoice ${invoice.number || ''} for ${invoice.client}?`)) return;
+      invoices = invoices.filter(item => item.id !== invoice.id);
+      persist();
+      toast('Invoice deleted');
+    };
+    actions.append(remove);
+    body.append(row);
+  }
+
+  const noMatches = visible.length === 0;
+  $('#empty').classList.toggle('hidden', !noMatches);
+  $('#empty').textContent = invoices.length === 0
+    ? 'Your invoice list is clear. Add an invoice to start tracking.'
+    : 'No invoices match this search. Try another name or filter.';
+  $('.table-wrap').classList.toggle('hidden', noMatches);
+}
+
+$('#add-toggle').onclick = () => {
+  form.classList.remove('hidden');
+  form.querySelector('[name="client"]').focus();
+};
+$('#cancel').onclick = () => { form.reset(); form.classList.add('hidden'); };
+$('#invoice-search').addEventListener('input', render);
+$('#invoice-filter').addEventListener('change', event => { filter = event.target.value; render(); });
+
+form.onsubmit = event => {
+  event.preventDefault();
+  const values = Object.fromEntries(new FormData(form));
+  const number = values.number.trim();
+  if (number && invoices.some(invoice => invoice.number?.toLowerCase() === number.toLowerCase())) {
+    toast('That invoice number is already in your list');
+    form.querySelector('[name="number"]').focus();
+    return;
+  }
+  invoices.unshift({ id: crypto.randomUUID(), ...values, number, client: values.client.trim(), amount: Number(values.amount), status: 'open' });
+  form.reset();
+  form.classList.add('hidden');
+  persist();
+  toast('Invoice saved on this device');
+};
+
+$('#export').onclick = () => {
+  const rows = [['Client', 'Invoice', 'Amount', 'Due date', 'Status'], ...invoices.map(invoice => [invoice.client, invoice.number, invoice.amount, invoice.due, invoiceStatus(invoice)])];
+  const csv = rows.map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'invoices.csv';
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
+render();
