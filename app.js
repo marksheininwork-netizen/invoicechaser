@@ -32,6 +32,16 @@ function persist() {
   render();
 }
 
+function editInvoice(invoice) {
+  for (const field of ['id', 'client', 'number', 'amount', 'due', 'email']) {
+    form.elements.namedItem(field).value = invoice[field] ?? '';
+  }
+  form.querySelector('[type="submit"]').textContent = 'Save changes';
+  form.classList.remove('hidden');
+  form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  form.elements.namedItem('client').focus();
+}
+
 function render() {
   const summary = totals(invoices);
   const today = localISODate();
@@ -107,6 +117,11 @@ function render() {
       reopen.onclick = () => { invoice.status = 'open'; persist(); };
       actions.append(reopen);
     }
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.textContent = 'Edit';
+    edit.onclick = () => editInvoice(invoice);
+    actions.append(edit);
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.textContent = 'Delete';
@@ -130,6 +145,9 @@ function render() {
 }
 
 $('#add-toggle').onclick = () => {
+  form.reset();
+  form.elements.namedItem('id').value = '';
+  form.querySelector('[type="submit"]').textContent = 'Save invoice';
   form.classList.remove('hidden');
   form.querySelector('[name="client"]').focus();
 };
@@ -141,16 +159,19 @@ form.onsubmit = event => {
   event.preventDefault();
   const values = Object.fromEntries(new FormData(form));
   const number = values.number.trim();
-  if (number && invoices.some(invoice => invoice.number?.toLowerCase() === number.toLowerCase())) {
+  if (number && invoices.some(invoice => invoice.id !== values.id && invoice.number?.toLowerCase() === number.toLowerCase())) {
     toast('That invoice number is already in your list');
     form.querySelector('[name="number"]').focus();
     return;
   }
-  invoices.unshift({ id: crypto.randomUUID(), ...values, number, client: values.client.trim(), amount: Number(values.amount), status: 'open' });
+  const existing = invoices.find(invoice => invoice.id === values.id);
+  const invoice = { ...existing, ...values, id: existing?.id || crypto.randomUUID(), number, client: values.client.trim(), amount: Number(values.amount), status: existing?.status || 'open' };
+  if (existing) invoices = invoices.map(item => item.id === existing.id ? invoice : item);
+  else invoices.unshift(invoice);
   form.reset();
   form.classList.add('hidden');
   persist();
-  toast('Invoice saved on this device');
+  toast(existing ? 'Invoice updated on this device' : 'Invoice saved on this device');
 };
 
 $('#export').onclick = () => {
