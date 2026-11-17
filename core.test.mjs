@@ -1,0 +1,4 @@
+import test from 'node:test';import assert from 'node:assert/strict';import{invoiceStatus,totals,reminderText,money}from'./core.mjs';
+test('invoice status respects paid flag and date boundary',()=>{assert.equal(invoiceStatus({due:'2026-11-15'},'2026-11-16'),'overdue');assert.equal(invoiceStatus({due:'2026-11-16'},'2026-11-16'),'due');assert.equal(invoiceStatus({due:'2026-11-01',status:'paid'},'2026-11-16'),'paid')});
+test('totals include open amounts and isolate overdue amounts',()=>{assert.deepEqual(totals([{amount:12,due:'2026-01-01'},{amount:8,due:'2026-12-01'},{amount:50,due:'2026-01-01',status:'paid'}],'2026-06-01'),{outstanding:20,overdue:12})});
+test('reminder is a draft with client, invoice, amount, and date',()=>{const text=reminderText({client:'Ari',number:'7',amount:20,due:'2026-01-10'});assert.match(text,/Ari/);assert.match(text,/\$20\.00/);assert.match(text,/2026-01-10/);assert.match(money(20),/20\.00/)});
