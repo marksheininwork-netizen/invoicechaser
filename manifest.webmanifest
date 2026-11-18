@@ -1,0 +1,17 @@
+{
+  "id": "./",
+  "name": "InvoiceChaser — Invoice Desk",
+  "short_name": "InvoiceChaser",
+  "description": "Track invoices and prepare friendly payment reminders.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#fbf8f2",
+  "theme_color": "#f4a261",
+  "categories": ["business", "finance", "productivity"],
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

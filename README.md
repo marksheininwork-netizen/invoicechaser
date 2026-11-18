@@ -2,13 +2,17 @@
 
 A lightweight invoice desk for independent service businesses. Search, filter, and edit invoices; track due dates and balances; prepare reminder drafts; and export a CSV backup.
 
+## Live PWA
+
+Install InvoiceChaser from [its public web app](https://marksheininwork-netizen.github.io/invoicechaser/). The app shell works offline after the first visit; invoice data is stored in the current browser only. See the [privacy policy](https://marksheininwork-netizen.github.io/invoicechaser/privacy.html) and [support page](https://marksheininwork-netizen.github.io/invoicechaser/support.html).
+
 ## Run locally
 
 Open `index.html` in a modern browser. No install or build step is required. Demo records and new entries are stored in this browser's local storage only. Reminder actions copy a draft or open a prefilled email if you choose; they never send a message.
 
 ## Checks
 
-Run `node --test core.test.mjs` with Node.js 18 or newer.
+Run `node --test` with Node.js 18 or newer to check core workflows, PWA assets, manifest wiring, and offline fallback.
 
 ## Scope
 
