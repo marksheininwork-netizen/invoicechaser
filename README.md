@@ -1,6 +1,6 @@
 # InvoiceChaser
 
-A lightweight invoice desk for independent service businesses. Search, filter, and edit invoices; track due dates and balances; prepare reminder drafts; and export a CSV backup.
+A lightweight invoice desk for independent service businesses. Search, filter, edit, and duplicate invoices; track due dates and balances; prepare reminder drafts; export CSV; and download or restore a versioned JSON backup.
 
 ## Live PWA
 
