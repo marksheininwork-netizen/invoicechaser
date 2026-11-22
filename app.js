@@ -32,6 +32,40 @@ function persist() {
   render();
 }
 
+
+function setupDataBackup(appName, readRecords, replaceRecords, isValidRecord) {
+  $('#backup-export').onclick = () => {
+    const payload = { app: appName, version: 1, exportedAt: new Date().toISOString(), records: readRecords() };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${appName}-backup-${localISODate()}.json`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast('Backup downloaded');
+  };
+  $('#backup-import').onclick = () => $('#backup-file').click();
+  $('#backup-file').onchange = async event => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      const backup = JSON.parse(await file.text());
+      if (backup.app !== appName || backup.version !== 1 || !Array.isArray(backup.records) || !backup.records.every(isValidRecord)) {
+        throw new Error('This file is not a valid backup for this app.');
+      }
+      if (!confirm(`Replace this device’s current data with ${backup.records.length} records from this backup? This cannot be undone.`)) return;
+      replaceRecords(backup.records);
+      persist();
+      toast(`Imported ${backup.records.length} records`);
+    } catch (error) {
+      toast(error instanceof SyntaxError ? 'Could not read that backup file' : error.message || 'Could not import backup');
+    } finally {
+      event.target.value = '';
+    }
+  };
+}
+setupDataBackup('invoicechaser', () => invoices, records => { invoices = records; }, invoice => invoice && typeof invoice.client === 'string' && Number.isFinite(Number(invoice.amount)) && typeof invoice.due === 'string');
+
 function editInvoice(invoice) {
   for (const field of ['id', 'client', 'number', 'amount', 'due', 'email']) {
     form.elements.namedItem(field).value = invoice[field] ?? '';
@@ -117,6 +151,17 @@ function render() {
       reopen.onclick = () => { invoice.status = 'open'; persist(); };
       actions.append(reopen);
     }
+    const duplicate = document.createElement('button');
+    duplicate.type = 'button';
+    duplicate.textContent = 'Duplicate';
+    duplicate.setAttribute('aria-label', `Duplicate invoice for ${invoice.client}`);
+    duplicate.onclick = () => {
+      const copy = { ...invoice, id: crypto.randomUUID(), number: `INV-${String(Date.now()).slice(-6)}`, status: 'open' };
+      invoices.unshift(copy);
+      persist();
+      toast('Invoice duplicated as open');
+    };
+    actions.append(duplicate);
     const edit = document.createElement('button');
     edit.type = 'button';
     edit.textContent = 'Edit';
