@@ -2,6 +2,8 @@
 
 A lightweight invoice desk for independent service businesses. Search, filter, edit, and duplicate invoices; track due dates, partial payments, and remaining balances; prepare reminder drafts; export CSV; and download or restore a versioned JSON backup.
 
+Invoice totals include partial payments, and the remaining balance is shown per invoice. Payment entries are stored in the current browser only.
+
 ## Live PWA
 
 Install InvoiceChaser from [its public web app](https://marksheininwork-netizen.github.io/invoicechaser/). The app shell works offline after the first visit; invoice data is stored in the current browser only. See the [privacy policy](https://marksheininwork-netizen.github.io/invoicechaser/privacy.html) and [support page](https://marksheininwork-netizen.github.io/invoicechaser/support.html).
