@@ -2,14 +2,14 @@ import { dueLabel, invoiceStatus, localISODate, money, reminderText, shiftISODat
 
 const storageKey = 'invoicechaser.invoices.v1';
 const sampleInvoices = () => [
-  { id: crypto.randomUUID(), client: 'Northstar Studio', number: 'INV-104', amount: 1400, due: shiftISODate(localISODate(), -8), email: '', status: 'open' },
-  { id: crypto.randomUUID(), client: 'Morrow & Co.', number: 'INV-108', amount: 2880, due: shiftISODate(localISODate(), 11), email: '', status: 'open' },
+  { id: crypto.randomUUID(), client: 'Northstar Studio', number: 'INV-104', amount: 1400, paidAmount: 0, due: shiftISODate(localISODate(), -8), email: '', status: 'open' },
+  { id: crypto.randomUUID(), client: 'Morrow & Co.', number: 'INV-108', amount: 2880, paidAmount: 0, due: shiftISODate(localISODate(), 11), email: '', status: 'open' },
 ];
 
 function readInvoices() {
   try {
     const saved = JSON.parse(localStorage.getItem(storageKey) || 'null');
-    return Array.isArray(saved) ? saved : sampleInvoices();
+    return Array.isArray(saved) ? saved.map(invoice => ({ ...invoice, paidAmount: invoice.paidAmount == null ? (invoice.status === 'paid' ? Number(invoice.amount) || 0 : 0) : Math.max(0, Number(invoice.paidAmount) || 0), status: 'open' })) : sampleInvoices();
   } catch {
     return sampleInvoices();
   }
@@ -67,7 +67,7 @@ function setupDataBackup(appName, readRecords, replaceRecords, isValidRecord) {
 setupDataBackup('invoicechaser', () => invoices, records => { invoices = records; }, invoice => invoice && typeof invoice.client === 'string' && Number.isFinite(Number(invoice.amount)) && typeof invoice.due === 'string');
 
 function editInvoice(invoice) {
-  for (const field of ['id', 'client', 'number', 'amount', 'due', 'email']) {
+  for (const field of ['id', 'client', 'number', 'amount', 'paidAmount', 'due', 'email']) {
     form.elements.namedItem(field).value = invoice[field] ?? '';
   }
   form.querySelector('[type="submit"]').textContent = 'Save changes';
@@ -100,7 +100,7 @@ function render() {
     row.innerHTML = `
       <td><div class="client-name"></div><div class="invoice-number"></div></td>
       <td><time></time><small class="due-note"></small></td>
-      <td><b class="amount"></b></td>
+      <td><b class="amount"></b><small class="amount-note"></small></td>
       <td><span class="pill"></span></td>
       <td><div class="row-actions"></div></td>`;
     row.querySelector('.client-name').textContent = invoice.client;
@@ -108,10 +108,13 @@ function render() {
     row.querySelector('time').dateTime = invoice.due;
     row.querySelector('time').textContent = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${invoice.due}T12:00:00`));
     row.querySelector('.due-note').textContent = dueLabel(invoice.due, today);
-    row.querySelector('.amount').textContent = money(invoice.amount);
+    const balance = Math.max(0, Number(invoice.amount) - (Number(invoice.paidAmount) || 0));
+    row.querySelector('.amount').textContent = money(balance);
+    row.querySelector('.amount-note').textContent = (Number(invoice.paidAmount) || 0) > 0 && balance > 0 ? `of ${money(invoice.amount)} total` : balance === 0 ? 'Paid in full' : '';
     const badge = row.querySelector('.pill');
-    badge.className = `pill ${status}`;
-    badge.textContent = ({ today: 'Due today', upcoming: 'Upcoming', overdue: 'Past due', paid: 'Paid' })[status];
+    const partial = balance > 0 && (Number(invoice.paidAmount) || 0) > 0;
+    badge.className = `pill ${partial ? 'partial' : status}`;
+    badge.textContent = partial ? `Partially paid · ${({ today: 'Due today', upcoming: 'Upcoming', overdue: 'Past due' })[status]}` : ({ today: 'Due today', upcoming: 'Upcoming', overdue: 'Past due', paid: 'Paid' })[status];
 
     const actions = row.querySelector('.row-actions');
     if (status !== 'paid') {
@@ -139,7 +142,8 @@ function render() {
       paid.type = 'button';
       paid.textContent = 'Mark paid';
       paid.onclick = () => {
-        invoice.status = 'paid';
+        invoice.paidAmount = Number(invoice.amount) || 0;
+        invoice.status = 'open';
         persist();
         toast('Invoice marked paid');
       };
@@ -148,7 +152,7 @@ function render() {
       const reopen = document.createElement('button');
       reopen.type = 'button';
       reopen.textContent = 'Reopen';
-      reopen.onclick = () => { invoice.status = 'open'; persist(); };
+      reopen.onclick = () => { invoice.paidAmount = 0; invoice.status = 'open'; persist(); toast('Invoice reopened with full balance'); };
       actions.append(reopen);
     }
     const duplicate = document.createElement('button');
@@ -156,7 +160,7 @@ function render() {
     duplicate.textContent = 'Duplicate';
     duplicate.setAttribute('aria-label', `Duplicate invoice for ${invoice.client}`);
     duplicate.onclick = () => {
-      const copy = { ...invoice, id: crypto.randomUUID(), number: `INV-${String(Date.now()).slice(-6)}`, status: 'open' };
+      const copy = { ...invoice, id: crypto.randomUUID(), number: `INV-${String(Date.now()).slice(-6)}`, paidAmount: 0, status: 'open' };
       invoices.unshift(copy);
       persist();
       toast('Invoice duplicated as open');
@@ -210,7 +214,10 @@ form.onsubmit = event => {
     return;
   }
   const existing = invoices.find(invoice => invoice.id === values.id);
-  const invoice = { ...existing, ...values, id: existing?.id || crypto.randomUUID(), number, client: values.client.trim(), amount: Number(values.amount), status: existing?.status || 'open' };
+  const amount = Number(values.amount);
+  const paidAmount = Number(values.paidAmount) || 0;
+  if (paidAmount > amount) { toast('Amount paid cannot exceed the invoice total'); form.elements.namedItem('paidAmount').focus(); return; }
+  const invoice = { ...existing, ...values, id: existing?.id || crypto.randomUUID(), number, client: values.client.trim(), amount, paidAmount, status: 'open' };
   if (existing) invoices = invoices.map(item => item.id === existing.id ? invoice : item);
   else invoices.unshift(invoice);
   form.reset();
@@ -220,7 +227,7 @@ form.onsubmit = event => {
 };
 
 $('#export').onclick = () => {
-  const rows = [['Client', 'Invoice', 'Amount', 'Due date', 'Status'], ...invoices.map(invoice => [invoice.client, invoice.number, invoice.amount, invoice.due, invoiceStatus(invoice)])];
+  const rows = [['Client', 'Invoice', 'Total', 'Paid', 'Balance', 'Due date', 'Status'], ...invoices.map(invoice => [invoice.client, invoice.number, invoice.amount, invoice.paidAmount || 0, Math.max(0, Number(invoice.amount) - (Number(invoice.paidAmount) || 0)), invoice.due, invoiceStatus(invoice)])];
   const csv = rows.map(row => row.map(value => `"${String(value).replaceAll('"', '""')}"`).join(',')).join('\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   const link = document.createElement('a');
