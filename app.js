@@ -16,6 +16,9 @@ function readInvoices() {
 }
 
 let invoices = readInvoices();
+// Persist first-run sample records so the dashboard and analytics pages share the same data.
+if (!localStorage.getItem(storageKey)) localStorage.setItem(storageKey, JSON.stringify(invoices));
+window.dispatchEvent(new Event('app-data-updated'));
 let filter = 'all';
 const $ = selector => document.querySelector(selector);
 const form = $('#invoice-form');
@@ -29,6 +32,7 @@ function toast(message) {
 
 function persist() {
   localStorage.setItem(storageKey, JSON.stringify(invoices));
+  window.dispatchEvent(new Event('app-data-updated'));
   render();
 }
 
@@ -148,6 +152,22 @@ function render() {
         toast('Invoice marked paid');
       };
       actions.append(paid);
+      const recordPayment = document.createElement('button');
+      recordPayment.type = 'button';
+      recordPayment.textContent = 'Record payment';
+      recordPayment.onclick = () => {
+        const balance = Math.max(0, Number(invoice.amount) - (Number(invoice.paidAmount) || 0));
+        const entered = prompt(`Record a payment for ${invoice.client}. Remaining balance: ${money(balance)}`, String(balance));
+        if (entered === null) return;
+        const amount = Number(entered);
+        if (!Number.isFinite(amount) || amount <= 0) { toast('Enter a payment greater than zero'); return; }
+        if (amount > balance) { toast('Payment cannot exceed the remaining balance'); return; }
+        invoice.paidAmount = (Number(invoice.paidAmount) || 0) + amount;
+        invoice.payments = [...(invoice.payments || []), { amount, date: localISODate() }];
+        persist();
+        toast(`Payment of ${money(amount)} recorded`);
+      };
+      actions.append(recordPayment);
     } else {
       const reopen = document.createElement('button');
       reopen.type = 'button';
@@ -238,3 +258,5 @@ $('#export').onclick = () => {
 };
 
 render();
+
+import './feature-pages.js';
