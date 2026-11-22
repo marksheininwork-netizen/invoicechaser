@@ -17,7 +17,7 @@ export function shiftISODate(isoDate, days) {
 }
 
 export function invoiceStatus(invoice, today = localISODate()) {
-  if (invoice.status === 'paid') return 'paid';
+  if (Number(invoice.paidAmount) >= Number(invoice.amount) && Number(invoice.amount) > 0) return 'paid';
   if (invoice.due < today) return 'overdue';
   if (invoice.due === today) return 'today';
   return 'upcoming';
@@ -27,10 +27,12 @@ export function totals(invoices, today = localISODate()) {
   return invoices.reduce((sum, invoice) => {
     const status = invoiceStatus(invoice, today);
     const amount = Number(invoice.amount) || 0;
-    if (status !== 'paid') sum.outstanding += amount;
-    if (status === 'overdue') sum.overdue += amount;
-    if (status === 'today') sum.dueToday += amount;
-    if (status === 'paid') sum.paid += amount;
+    const received = Math.min(amount, Math.max(0, Number(invoice.paidAmount) || 0));
+    const balance = Math.max(0, amount - received);
+    if (status !== 'paid') sum.outstanding += balance;
+    if (status === 'overdue') sum.overdue += balance;
+    if (status === 'today') sum.dueToday += balance;
+    sum.paid += received;
     return sum;
   }, { outstanding: 0, overdue: 0, dueToday: 0, paid: 0 });
 }
@@ -45,5 +47,6 @@ export function dueLabel(due, today = localISODate()) {
 
 export function reminderText(invoice) {
   const reference = invoice.number ? ` ${invoice.number}` : '';
-  return `Hi ${invoice.client}, just a friendly reminder that invoice${reference} for ${money(invoice.amount)} was due on ${invoice.due}. Please let me know if you have any questions. Thanks!`;
+  const balance = Math.max(0, Number(invoice.amount) - (Number(invoice.paidAmount) || 0));
+  return `Hi ${invoice.client}, just a friendly reminder that invoice${reference} has a remaining balance of ${money(balance)} and was due on ${invoice.due}. Please let me know if you have any questions. Thanks!`;
 }
