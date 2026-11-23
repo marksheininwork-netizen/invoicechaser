@@ -16,6 +16,9 @@ function readInvoices() {
 }
 
 let invoices = readInvoices();
+// Persist first-run sample records so the dashboard and analytics pages share the same data.
+if (!localStorage.getItem(storageKey)) localStorage.setItem(storageKey, JSON.stringify(invoices));
+window.dispatchEvent(new Event('app-data-updated'));
 let filter = 'all';
 const $ = selector => document.querySelector(selector);
 const form = $('#invoice-form');
@@ -29,6 +32,7 @@ function toast(message) {
 
 function persist() {
   localStorage.setItem(storageKey, JSON.stringify(invoices));
+  window.dispatchEvent(new Event('app-data-updated'));
   render();
 }
 
@@ -107,7 +111,7 @@ function render() {
     row.querySelector('.invoice-number').textContent = invoice.number || 'Invoice';
     row.querySelector('time').dateTime = invoice.due;
     row.querySelector('time').textContent = new Intl.DateTimeFormat(undefined, { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(`${invoice.due}T12:00:00`));
-    row.querySelector('.due-note').textContent = dueLabel(invoice.due, today);
+    row.querySelector('.due-note').textContent = dueLabel(invoice.due, today) + (invoice.lastReminderSent ? ' · Last reminder '+new Intl.DateTimeFormat(undefined,{month:'short',day:'numeric'}).format(new Date(invoice.lastReminderSent+'T12:00:00')) : '');
     const balance = Math.max(0, Number(invoice.amount) - (Number(invoice.paidAmount) || 0));
     row.querySelector('.amount').textContent = money(balance);
     row.querySelector('.amount-note').textContent = (Number(invoice.paidAmount) || 0) > 0 && balance > 0 ? `of ${money(invoice.amount)} total` : balance === 0 ? 'Paid in full' : '';
@@ -138,6 +142,17 @@ function render() {
         }
       };
       actions.append(draft);
+      const sent = document.createElement('button');
+      sent.type = 'button';
+      sent.textContent = invoice.lastReminderSent ? 'Mark reminder sent again' : 'Mark reminder sent';
+      sent.setAttribute('aria-label', 'Log a sent reminder for '+invoice.client);
+      sent.onclick = () => {
+        invoice.lastReminderSent = localISODate();
+        invoice.reminderCount = Number(invoice.reminderCount || 0) + 1;
+        persist();
+        toast('Reminder marked as sent. No email was sent by InvoiceChaser.');
+      };
+      actions.append(sent);
       const paid = document.createElement('button');
       paid.type = 'button';
       paid.textContent = 'Mark paid';
@@ -148,6 +163,22 @@ function render() {
         toast('Invoice marked paid');
       };
       actions.append(paid);
+      const recordPayment = document.createElement('button');
+      recordPayment.type = 'button';
+      recordPayment.textContent = 'Record payment';
+      recordPayment.onclick = () => {
+        const balance = Math.max(0, Number(invoice.amount) - (Number(invoice.paidAmount) || 0));
+        const entered = prompt(`Record a payment for ${invoice.client}. Remaining balance: ${money(balance)}`, String(balance));
+        if (entered === null) return;
+        const amount = Number(entered);
+        if (!Number.isFinite(amount) || amount <= 0) { toast('Enter a payment greater than zero'); return; }
+        if (amount > balance) { toast('Payment cannot exceed the remaining balance'); return; }
+        invoice.paidAmount = (Number(invoice.paidAmount) || 0) + amount;
+        invoice.payments = [...(invoice.payments || []), { amount, date: localISODate() }];
+        persist();
+        toast(`Payment of ${money(amount)} recorded`);
+      };
+      actions.append(recordPayment);
     } else {
       const reopen = document.createElement('button');
       reopen.type = 'button';
@@ -160,7 +191,7 @@ function render() {
     duplicate.textContent = 'Duplicate';
     duplicate.setAttribute('aria-label', `Duplicate invoice for ${invoice.client}`);
     duplicate.onclick = () => {
-      const copy = { ...invoice, id: crypto.randomUUID(), number: `INV-${String(Date.now()).slice(-6)}`, paidAmount: 0, status: 'open' };
+      const copy = { ...invoice, id: crypto.randomUUID(), number: `INV-${String(Date.now()).slice(-6)}`, paidAmount: 0, status: 'open', lastReminderSent: null, reminderCount: 0 };
       invoices.unshift(copy);
       persist();
       toast('Invoice duplicated as open');
@@ -238,3 +269,5 @@ $('#export').onclick = () => {
 };
 
 render();
+
+import './feature-pages.js';
